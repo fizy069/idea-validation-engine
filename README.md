@@ -103,3 +103,49 @@ Run offline API smoke tests (no OASIS/OpenAI calls):
 ```powershell
 python tests/smoke_test.py
 ```
+
+## Deploy to Render (Free)
+
+This repo includes a `render.yaml` blueprint, `Procfile`, and `runtime.txt`
+that make it deployable to Render's free tier in a couple of clicks.
+
+### One-time setup
+
+1. Push this repo to GitHub (or GitLab).
+2. Create a free account at https://render.com and connect your Git provider.
+3. Click **New + → Blueprint**, pick the repo, and Render will detect
+   `render.yaml` automatically. Confirm the plan.
+4. When prompted, set the secret env vars (these have `sync: false` in
+   `render.yaml`):
+   - `OPENAI_API_KEY` — your OpenAI key (required)
+   - `FRONTEND_ORIGIN` — comma-separated list of allowed origins for CORS,
+     e.g. `https://your-frontend.vercel.app,https://www.example.com`
+5. Click **Apply**. The first build takes ~3-5 minutes.
+
+Your API will be live at `https://oasis-backend.onrender.com` (or whatever
+name Render generates). Check `GET /health` to confirm.
+
+### What the blueprint configures
+
+- Python 3.11.9 runtime
+- `pip install -r requirements.txt` build step
+- `uvicorn main:app` start command bound to Render's `$PORT`
+- A 1 GB persistent disk mounted at `/var/data` so the SQLite DB survives
+  restarts and redeploys (`SQLITE_DB_PATH=/var/data/validations.db`)
+- `/health` as the health-check path
+- Sensible defaults for `MARKET_MODEL`, `JUDGE_MODEL`, and rate limits
+
+### Free tier notes
+
+- The free web service **sleeps after ~15 minutes of inactivity** and takes
+  ~30-60s to wake up on the next request. The `/health` endpoint is the
+  cheapest way to wake it.
+- 750 instance hours/month are included.
+- The persistent disk is free up to 1 GB on the free tier.
+- Render terminates plain HTTP and serves your app over HTTPS automatically.
+
+### Updating the deployment
+
+Every push to your `main` branch triggers an auto-deploy (configured by
+`autoDeploy: true` in `render.yaml`). To change env vars, edit them in the
+Render dashboard under **Environment**.

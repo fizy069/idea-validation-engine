@@ -36,7 +36,10 @@ from oasis_validator.storage import (
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_PERSONAS = ROOT / "data" / "personas.json"
-DEFAULT_RUNS_DIR = ROOT / "data" / "runs"
+_runs_dir_env = os.environ.get("RUNS_DIR", "").strip()
+DEFAULT_RUNS_DIR = (
+    Path(_runs_dir_env).expanduser().resolve() if _runs_dir_env else ROOT / "data" / "runs"
+)
 SLUG_RE = re.compile(SLUG_PATTERN)
 
 logger = logging.getLogger(__name__)
