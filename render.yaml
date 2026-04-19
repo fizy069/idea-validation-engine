@@ -9,17 +9,9 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
     healthCheckPath: /health
     autoDeploy: true
-    disk:
-      name: oasis-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: SQLITE_DB_PATH
-        value: /var/data/validations.db
-      - key: RUNS_DIR
-        value: /var/data/runs
       - key: MARKET_MODEL
         value: gpt-4o-mini
       - key: JUDGE_MODEL
