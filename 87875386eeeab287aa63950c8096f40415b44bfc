@@ -1,0 +1,26 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "87875386eeeab287aa63950c8096f40415b44bfc",
+  "prompts": {
+    "2638564f05df4e73": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "223c4b10-5f3b-46c0-974b-53e6d00c0b0e",
+        "model": "claude-opus-4-7-max"
+      },
+      "human_author": "fizy069",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 8,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    }
+  },
+  "humans": {
+    "h_55bf61dfd6cf88": {
+      "author": "Mahir Ghadiali (mghadial)"
+    }
+  }
+}
