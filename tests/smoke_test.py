@@ -1,220 +1,200 @@
-"""Offline smoke test for the validator.
+"""Offline smoke test for the FastAPI backend contract.
 
-This test does NOT call OpenAI or run a real OASIS simulation. It builds
-a synthetic SQLite database that mimics the OASIS schema for ``post``,
-``comment`` and ``trace``, then drives the scorer + report through it
-to verify the wiring.
-
-A real end-to-end run requires Python 3.10 or 3.11 (camel-oasis pins
-``<3.12``) and a valid OPENAI_API_KEY; see README for instructions.
+This test does not run OASIS or call OpenAI. It patches the simulation
+pipeline and verifies:
+  - request validation + error envelope
+  - simulate -> persist -> fetch roundtrip
+  - slug validation and not-found behavior
+  - rate limiting semantics
 
 Usage:
-
     python tests/smoke_test.py
 """
 
 from __future__ import annotations
 
-import gc
-import json
-import sqlite3
+import asyncio
+import importlib
+import os
+import re
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
+
+from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from oasis_validator.report import render_console, render_json
-from oasis_validator.scorer import (
-    JudgeVerdict,
-    _read_comments,
-    _read_engagement,
-    _read_interviews,
-    score_run,
-)
-from oasis_validator.types import SimulationOutcome
+from oasis_validator.rate_limit import InMemoryRateLimiter
+from oasis_validator.scorer import MarketArtifacts
 
 
-def _make_fake_db(path: Path) -> None:
-    conn = sqlite3.connect(str(path))
-    cur = conn.cursor()
-    cur.executescript(
-        """
-        CREATE TABLE post (
-            post_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            original_post_id INTEGER,
-            content TEXT DEFAULT '',
-            quote_content TEXT,
-            created_at DATETIME,
-            num_likes INTEGER DEFAULT 0,
-            num_dislikes INTEGER DEFAULT 0,
-            num_shares INTEGER DEFAULT 0,
-            num_reports INTEGER DEFAULT 0
-        );
-        CREATE TABLE comment (
-            comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            post_id INTEGER,
-            user_id INTEGER,
-            content TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            num_likes INTEGER DEFAULT 0,
-            num_dislikes INTEGER DEFAULT 0
-        );
-        CREATE TABLE trace (
-            user_id INTEGER,
-            created_at DATETIME,
-            action TEXT,
-            info TEXT,
-            PRIMARY KEY(user_id, created_at, action, info)
-        );
-        """
+def _fake_artifacts() -> MarketArtifacts:
+    return MarketArtifacts(
+        post={
+            "title": "A SaaS that turns Slack threads into searchable docs",
+            "body": "Engineering managers at 50–500 person companies",
+            "likes": 38,
+            "dislikes": 6,
+            "shares": 9,
+            "commentCount": 2,
+            "createdAt": "2026-04-19T12:34:56Z",
+        },
+        thread=[
+            {
+                "id": "c1",
+                "agentId": 7,
+                "agent": "PowerUser_42",
+                "personaDescription": "Senior backend engineer, opinionated about tooling",
+                "type": "vocal",
+                "comment": "Strong idea with clear user pain.",
+                "likes": 47,
+                "dislikes": 3,
+                "turn": 1,
+                "createdAt": "2026-04-19T12:35:12Z",
+                "replies": [],
+            },
+            {
+                "id": "c2",
+                "agentId": 12,
+                "agent": "Skeptic_9",
+                "personaDescription": "Cost-conscious solo founder",
+                "type": "vocal",
+                "comment": "Differentiation from incumbents is still unclear.",
+                "likes": 9,
+                "dislikes": 5,
+                "turn": 1,
+                "createdAt": "2026-04-19T12:36:01Z",
+                "replies": [],
+            },
+        ],
+        interviews=[
+            {
+                "agentId": 7,
+                "agent": "PowerUser_42",
+                "personaDescription": "Senior backend engineer, opinionated about tooling",
+                "prompt": "Would you personally use this?",
+                "response": "Yes, if integrations are deep and setup is quick.",
+                "createdAt": "2026-04-19T12:38:44Z",
+            }
+        ],
+        traction_score=7.2,
+        summary="The market signal is positive, but pricing and differentiation need work.",
     )
-    cur.execute(
-        "INSERT INTO post (post_id, user_id, content, num_likes, num_dislikes, num_shares) "
-        "VALUES (1, 0, 'A SaaS that turns Slack threads into searchable docs', 8, 2, 1)"
-    )
-
-    sample_comments = [
-        (1, 1, "I would actually pay for this. Searching Slack is a nightmare."),
-        (1, 2, "Cool, but how is this different from existing tools like Glean?"),
-        (1, 3, "Privacy is the killer concern. Where does the data live?"),
-        (1, 4, "Love the wedge. Slack export is a real pain point."),
-        (1, 5, "Sounds like a feature, not a product."),
-    ]
-    cur.executemany(
-        "INSERT INTO comment (post_id, user_id, content) VALUES (?, ?, ?)",
-        sample_comments,
-    )
-
-    interviews = [
-        (
-            6,
-            "2025-01-01 12:00:00",
-            "interview",
-            json.dumps(
-                {
-                    "prompt": "Would you use this?",
-                    "interview_id": "ts_6",
-                    "response": "Yes, but only if SSO and SOC2 are in place.",
-                }
-            ),
-        ),
-        (
-            7,
-            "2025-01-01 12:01:00",
-            "interview",
-            json.dumps(
-                {
-                    "prompt": "Would you use this?",
-                    "interview_id": "ts_7",
-                    "response": "Probably not. Our team uses Notion already.",
-                }
-            ),
-        ),
-        (
-            8,
-            "2025-01-01 12:02:00",
-            "interview",
-            json.dumps(
-                {
-                    "prompt": "Would you use this?",
-                    "interview_id": "ts_8",
-                    "response": "Maybe. Pricing would have to be very low for SMB.",
-                }
-            ),
-        ),
-    ]
-    cur.executemany(
-        "INSERT INTO trace (user_id, created_at, action, info) VALUES (?, ?, ?, ?)",
-        interviews,
-    )
-    conn.commit()
-    conn.close()
 
 
 def main() -> int:
-    print("Smoke test: scorer + report (no OASIS, no OpenAI)")
+    print("Smoke test: FastAPI backend contract")
     print("=" * 60)
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+        sqlite_path = str(Path(tmp_dir) / "validations.db")
+        os.environ["SQLITE_DB_PATH"] = sqlite_path
+        os.environ["SIMULATE_RATE_LIMIT_MAX_REQUESTS"] = "10"
+        os.environ["SIMULATE_RATE_LIMIT_WINDOW_SECONDS"] = "60"
+        os.environ["FRONTEND_ORIGIN"] = "http://localhost:3000"
 
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-        db_path = Path(tmp) / "fake_run.db"
-        _make_fake_db(db_path)
+        import main as backend_main
 
-        engagement = _read_engagement(db_path, seed_post_id=1, audience_size=20)
-        comments = _read_comments(db_path, seed_post_id=1)
-        interviews = _read_interviews(db_path)
+        importlib.reload(backend_main)
+        asyncio.run(backend_main.rate_limiter.reset())
+        client = TestClient(backend_main.app)
 
-        assert engagement.num_likes == 8, engagement
-        assert engagement.num_dislikes == 2, engagement
-        assert engagement.num_comments == 5, engagement
-        assert engagement.num_shares == 1, engagement
-        assert 0 <= engagement.score <= 100, engagement
-        assert len(comments) == 5, comments
-        assert len(interviews) == 3, interviews
-        print(f"  engagement.score = {engagement.score:.2f}")
-        print(f"  comments         = {len(comments)}")
-        print(f"  interviews       = {len(interviews)}")
+        health = client.get("/health")
+        assert health.status_code == 200, health.text
+        assert health.json() == {"status": "ok"}
+        print("  health endpoint                OK")
 
-        outcome = SimulationOutcome(
-            db_path=db_path,
-            seed_post_id=1,
-            poster_agent_id=0,
-            interviewed_agent_ids=[6, 7, 8],
-            num_agents=20,
-            num_reaction_steps=3,
+        invalid = client.post(
+            "/simulate/market",
+            json={
+                "idea": "x",
+                "targetUser": "y",
+                "subreddit": "r/SaaS",
+                "extra": "field",
+            },
         )
-
-        fake_verdict = JudgeVerdict(
-            score=72.0,
-            summary=(
-                "The audience finds the idea genuinely useful for teams that "
-                "live in Slack, with strong concerns about privacy and "
-                "differentiation from incumbents like Glean and Notion."
-            ),
-            top_praises=[
-                "Solves a real pain point (Slack search is bad).",
-                "Clear wedge for SMB teams.",
-            ],
-            top_concerns=[
-                "Privacy and data residency concerns.",
-                "Risk of being 'a feature, not a product'.",
-                "Crowded market (Glean, Notion, etc.).",
-            ],
-            audience_fit="SMB engineering and ops teams that already live in Slack.",
-        )
+        assert invalid.status_code == 400, invalid.text
+        assert invalid.json()["error"] == "invalid_request"
+        print("  unknown field rejection        OK")
 
         with patch(
-            "oasis_validator.scorer._judge_with_llm",
-            return_value=fake_verdict,
+            "main._run_market_validation",
+            new=AsyncMock(return_value=_fake_artifacts()),
         ):
-            result = score_run(
-                outcome,
-                idea="A SaaS that turns Slack threads into searchable internal docs",
-                judge_model="gpt-4o-mini",
+            simulate = client.post(
+                "/simulate/market",
+                json={
+                    "idea": "A SaaS that turns Slack threads into searchable docs",
+                    "targetUser": "Engineering managers at 50–500 person companies",
+                    "subreddit": "r/SaaS",
+                    "numVocal": 5,
+                    "turns": 2,
+                },
             )
+        assert simulate.status_code == 200, simulate.text
+        payload = simulate.json()
+        assert re.fullmatch(r"^[a-f0-9]{8,64}$", payload["slug"]), payload["slug"]
+        assert payload["subreddit"] == "r/SaaS"
+        assert payload["tractionScore"] == 7.2
+        print("  simulate response shape        OK")
 
-        assert 0 <= result.final_score <= 100
-        assert abs(result.final_score - (0.5 * engagement.score + 0.5 * 72.0)) < 0.01
-        assert result.engagement.num_likes == 8
-        assert result.sentiment.score == 72.0
-        assert len(result.sample_comments) > 0
-        print(f"  final_score      = {result.final_score:.2f}")
+        slug = payload["slug"]
+        by_slug = client.get(f"/result/{slug}")
+        assert by_slug.status_code == 200, by_slug.text
+        by_slug_payload = by_slug.json()
+        assert by_slug_payload["slug"] == slug
+        assert by_slug_payload["result"] == payload
+        assert by_slug.headers.get("cache-control") == "no-store"
+        print("  persisted result retrieval     OK")
 
-        json_out = render_json(result)
-        parsed = json.loads(json_out)
-        assert parsed["final_score"] == result.final_score
-        assert parsed["engagement"]["num_likes"] == 8
-        assert "summary" in parsed["sentiment"]
-        print("  JSON output      = OK")
+        interviews = client.get(f"/result/{slug}/interviews")
+        assert interviews.status_code == 200, interviews.text
+        interviews_payload = interviews.json()
+        assert interviews_payload["slug"] == slug
+        assert len(interviews_payload["interviews"]) == 1
+        assert interviews.headers.get("cache-control") == "no-store"
+        print("  interviews retrieval           OK")
 
-        print("\n--- console render ---")
-        render_console(result)
-        print("--- end console render ---")
+        bad_slug = client.get("/result/not-a-valid-slug")
+        assert bad_slug.status_code == 400, bad_slug.text
+        assert bad_slug.json()["error"] == "invalid_slug"
+        print("  invalid slug handling          OK")
 
-        del result
-        gc.collect()
+        missing = client.get("/result/abcdef12")
+        assert missing.status_code == 404, missing.text
+        assert missing.json()["error"] == "not_found"
+        print("  not found handling             OK")
+
+        backend_main.rate_limiter = InMemoryRateLimiter(
+            max_requests=1,
+            window_seconds=60,
+        )
+        with patch(
+            "main._run_market_validation",
+            new=AsyncMock(return_value=_fake_artifacts()),
+        ):
+            first = client.post(
+                "/simulate/market",
+                json={
+                    "idea": "a",
+                    "targetUser": "b",
+                    "subreddit": "r/Test",
+                },
+            )
+            second = client.post(
+                "/simulate/market",
+                json={
+                    "idea": "a2",
+                    "targetUser": "b2",
+                    "subreddit": "r/Test",
+                },
+            )
+        assert first.status_code == 200, first.text
+        assert second.status_code == 429, second.text
+        assert second.headers.get("Retry-After"), second.headers
+        assert second.json()["error"] == "rate_limited"
+        print("  rate limiting + Retry-After    OK")
 
     print("\nAll smoke checks passed.")
     return 0

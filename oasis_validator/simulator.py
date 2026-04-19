@@ -57,6 +57,7 @@ class SimulationConfig:
     """Configuration for a single idea-validation simulation run."""
 
     idea: str
+    target_user: str
     persona_path: Path
     db_path: Path
     model_name: str = "gpt-4o-mini"
@@ -90,6 +91,12 @@ class SimulationConfig:
             raise ValueError("idea must be a non-empty string")
         if len(idea) > 4000:
             raise ValueError("idea must be at most 4000 characters")
+
+        target_user = (self.target_user or "").strip()
+        if not target_user:
+            raise ValueError("target_user must be a non-empty string")
+        if len(target_user) > 500:
+            raise ValueError("target_user must be at most 500 characters")
 
         if not isinstance(self.persona_path, Path):
             raise ValueError("persona_path must be a pathlib.Path")
@@ -213,10 +220,11 @@ async def run_simulation(config: SimulationConfig) -> SimulationOutcome:
 
     await env.reset()
 
+    post_content = f"{config.idea}\n\nTarget user: {config.target_user}"
     seed_action = {
         env.agent_graph.get_agent(poster_id): ManualAction(
             action_type=ActionType.CREATE_POST,
-            action_args={"content": config.idea},
+            action_args={"content": post_content},
         )
     }
     await env.step(seed_action)
@@ -256,6 +264,7 @@ async def run_simulation(config: SimulationConfig) -> SimulationOutcome:
 
     return SimulationOutcome(
         db_path=config.db_path,
+        persona_path=config.persona_path,
         seed_post_id=seed_post_id,
         poster_agent_id=poster_id,
         interviewed_agent_ids=interview_ids,

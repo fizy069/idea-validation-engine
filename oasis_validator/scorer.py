@@ -1,25 +1,4 @@
-"""Scoring layer for OASIS idea validation runs.
-
-Reads the SQLite database produced by ``simulator.run_simulation`` and
-combines two signals into one 0-100 hybrid score:
-
-1. Engagement score: derived from likes, dislikes, comment volume and
-   shares on the seed post, normalized by audience size.
-2. Sentiment score: an LLM "judge" reads every comment on the seed post
-   and every interview answer, then returns a structured JSON verdict
-   that we validate strictly with Pydantic before consuming.
-
-Security / robustness notes:
-
-- All SQLite queries are parameterized; no string concatenation of
-  untrusted values goes into SQL.
-- The judge model is prompted to emit JSON, but its output is treated as
-  untrusted. We require ``response_format=json_object`` on the API call
-  *and* validate the parsed JSON against a Pydantic schema before any
-  field is accessed.
-- The OpenAI API key is read by the SDK from ``OPENAI_API_KEY`` in the
-  environment; this module does not log, store, or echo it.
-"""
+"""Transform OASIS SQLite output into backend API payloads."""
 
 from __future__ import annotations
 
@@ -27,7 +6,8 @@ import json
 import logging
 import os
 import sqlite3
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -38,118 +18,369 @@ from oasis_validator.types import INTERVIEW_ACTION_VALUE, SimulationOutcome
 
 logger = logging.getLogger(__name__)
 
-JUDGE_MAX_PRAISE_OR_CONCERN = 5
 JUDGE_MAX_FEEDBACK_CHARS = 24_000
 
 
 @dataclass
-class EngagementBreakdown:
-    """Raw and normalized engagement signals on the seed post."""
+class CommentRecord:
+    comment_id: int
+    user_id: int
+    content: str
+    likes: int
+    dislikes: int
+    created_at: str
+    parent_comment_id: Optional[int]
 
-    audience_size: int
-    num_likes: int
-    num_dislikes: int
-    num_comments: int
-    num_shares: int
-    score: float
+
+@dataclass
+class MarketArtifacts:
+    post: Dict[str, Any]
+    thread: List[Dict[str, Any]]
+    interviews: List[Dict[str, Any]]
+    traction_score: float
+    summary: str
 
 
 @dataclass
 class JudgeVerdict:
-    """LLM judge output (already validated)."""
-
     score: float
     summary: str
-    top_praises: List[str]
-    top_concerns: List[str]
-    audience_fit: str
-
-
-@dataclass
-class ValidationResult:
-    """Final, user-facing output of a validation run."""
-
-    idea: str
-    final_score: float
-    engagement: EngagementBreakdown
-    sentiment: JudgeVerdict
-    sample_comments: List[str] = field(default_factory=list)
-    sample_interviews: List[Dict[str, str]] = field(default_factory=list)
-    notes: List[str] = field(default_factory=list)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "idea": self.idea,
-            "final_score": self.final_score,
-            "engagement": asdict(self.engagement),
-            "sentiment": asdict(self.sentiment),
-            "sample_comments": self.sample_comments,
-            "sample_interviews": self.sample_interviews,
-            "notes": self.notes,
-        }
 
 
 class _JudgeSchema(BaseModel):
-    """Strict schema for the LLM judge response.
-
-    We coerce numeric strings into floats and clamp ``score`` into the
-    [0, 100] range elsewhere; here we just enforce the shape.
-    """
-
     score: float = Field(..., ge=0, le=100)
     summary: str = Field(..., min_length=1, max_length=2000)
-    top_praises: List[str] = Field(default_factory=list, max_length=10)
-    top_concerns: List[str] = Field(default_factory=list, max_length=10)
-    audience_fit: str = Field(default="", max_length=1000)
 
 
-def _read_engagement(
-    db_path: Path, seed_post_id: int, audience_size: int
-) -> EngagementBreakdown:
-    """Compute the engagement sub-score from the SQLite trace.
+def _to_iso_utc(value: Optional[str]) -> str:
+    if not value:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    Formula (intentionally simple and tunable):
+    try:
+        cleaned = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(cleaned)
+    except ValueError:
+        try:
+            dt = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        raw = (likes - dislikes) / N
-            + 0.5 * comments / N
-            + 0.3 * shares / N
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat().replace("+00:00", "Z")
 
-    where N = max(1, audience_size). We map raw -> [0, 100] with a
-    clamped piecewise: <= -1 maps to 0, >= 1.5 maps to 100, linear in
-    between, with neutral activity (~0) sitting at 40 to reflect the
-    fact that "no reaction" is mildly negative for an idea.
-    """
-    if not db_path.is_file():
-        raise FileNotFoundError(f"simulation db not found: {db_path}")
 
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
+def _load_persona_lookup(persona_path: Path) -> Dict[int, Dict[str, str]]:
+    with persona_path.open("r", encoding="utf-8") as handle:
+        personas = json.load(handle)
+    if not isinstance(personas, list):
+        return {}
 
-        cur.execute(
-            "SELECT num_likes, num_dislikes, num_shares "
-            "FROM post WHERE post_id = ?",
-            (seed_post_id,),
+    lookup: Dict[int, Dict[str, str]] = {}
+    for idx, persona in enumerate(personas):
+        if not isinstance(persona, dict):
+            continue
+        agent_name = (
+            str(persona.get("username") or persona.get("realname") or f"agent_{idx}")
+            .strip()
+            .replace(" ", "_")
         )
-        row = cur.fetchone()
-        if row is None:
-            num_likes = num_dislikes = num_shares = 0
-        else:
-            num_likes = int(row["num_likes"] or 0)
-            num_dislikes = int(row["num_dislikes"] or 0)
-            num_shares = int(row["num_shares"] or 0)
+        description = str(persona.get("bio") or persona.get("persona") or "").strip()
+        if len(description) > 220:
+            description = f"{description[:217]}..."
+        lookup[idx] = {
+            "name": agent_name or f"agent_{idx}",
+            "description": description,
+        }
+    return lookup
 
-        cur.execute(
-            "SELECT COUNT(*) AS n FROM comment WHERE post_id = ?",
-            (seed_post_id,),
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+def _read_post_stats(
+    conn: sqlite3.Connection, seed_post_id: int
+) -> Dict[str, Any]:
+    columns = _table_columns(conn, "post")
+    select_parts = ["post_id"]
+    if "num_likes" in columns:
+        select_parts.append("num_likes")
+    else:
+        select_parts.append("0 AS num_likes")
+    if "num_dislikes" in columns:
+        select_parts.append("num_dislikes")
+    else:
+        select_parts.append("0 AS num_dislikes")
+    if "num_shares" in columns:
+        select_parts.append("num_shares")
+    else:
+        select_parts.append("0 AS num_shares")
+    if "created_at" in columns:
+        select_parts.append("created_at")
+    else:
+        select_parts.append("NULL AS created_at")
+
+    row = conn.execute(
+        f"SELECT {', '.join(select_parts)} FROM post WHERE post_id = ? LIMIT 1",
+        (seed_post_id,),
+    ).fetchone()
+    if row is None:
+        return {
+            "likes": 0,
+            "dislikes": 0,
+            "shares": 0,
+            "created_at": _to_iso_utc(None),
+        }
+    return {
+        "likes": int(row["num_likes"] or 0),
+        "dislikes": int(row["num_dislikes"] or 0),
+        "shares": int(row["num_shares"] or 0),
+        "created_at": _to_iso_utc(row["created_at"]),
+    }
+
+
+def _read_comment_records(
+    conn: sqlite3.Connection, seed_post_id: int
+) -> List[CommentRecord]:
+    columns = _table_columns(conn, "comment")
+    parent_col = next(
+        (
+            name
+            for name in (
+                "parent_comment_id",
+                "parent_id",
+                "reply_to_comment_id",
+                "original_comment_id",
+            )
+            if name in columns
+        ),
+        None,
+    )
+
+    select_parts = ["comment_id", "user_id", "content"]
+    if "num_likes" in columns:
+        select_parts.append("num_likes")
+    else:
+        select_parts.append("0 AS num_likes")
+    if "num_dislikes" in columns:
+        select_parts.append("num_dislikes")
+    else:
+        select_parts.append("0 AS num_dislikes")
+    if "created_at" in columns:
+        select_parts.append("created_at")
+    else:
+        select_parts.append("NULL AS created_at")
+    if parent_col is not None:
+        select_parts.append(f"{parent_col} AS parent_comment_id")
+    else:
+        select_parts.append("NULL AS parent_comment_id")
+
+    order_parts = ["comment_id"]
+    if "created_at" in columns:
+        order_parts = ["created_at", "comment_id"]
+
+    rows = conn.execute(
+        f"""
+        SELECT {', '.join(select_parts)}
+        FROM comment
+        WHERE post_id = ?
+        ORDER BY {', '.join(order_parts)}
+        """,
+        (seed_post_id,),
+    ).fetchall()
+
+    records: List[CommentRecord] = []
+    for row in rows:
+        content = str(row["content"] or "").strip()
+        if not content:
+            continue
+        parent_raw = row["parent_comment_id"]
+        parent_comment_id = int(parent_raw) if parent_raw is not None else None
+        records.append(
+            CommentRecord(
+                comment_id=int(row["comment_id"]),
+                user_id=int(row["user_id"]),
+                content=content,
+                likes=int(row["num_likes"] or 0),
+                dislikes=int(row["num_dislikes"] or 0),
+                created_at=_to_iso_utc(row["created_at"]),
+                parent_comment_id=parent_comment_id,
+            )
         )
-        num_comments = int(cur.fetchone()["n"] or 0)
+    return records
 
-    n = max(1, audience_size)
+
+def _read_interviews(
+    conn: sqlite3.Connection,
+    persona_lookup: Dict[int, Dict[str, str]],
+) -> List[Dict[str, Any]]:
+    try:
+        rows = conn.execute(
+            """
+            SELECT user_id, created_at, info
+            FROM trace
+            WHERE action = ?
+            ORDER BY created_at
+            """,
+            (INTERVIEW_ACTION_VALUE,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+
+    interviews: List[Dict[str, Any]] = []
+    for row in rows:
+        try:
+            info = json.loads(row["info"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(info, dict):
+            continue
+
+        response = str(info.get("response") or "").strip()
+        if not response:
+            continue
+
+        agent_id = int(row["user_id"])
+        persona = persona_lookup.get(agent_id, {})
+        interviews.append(
+            {
+                "agentId": agent_id,
+                "agent": persona.get("name", f"agent_{agent_id}"),
+                "personaDescription": persona.get("description", ""),
+                "prompt": str(info.get("prompt") or "").strip(),
+                "response": response,
+                "createdAt": _to_iso_utc(row["created_at"]),
+            }
+        )
+    return interviews
+
+
+def _truncate_for_judge(items: List[str], max_chars: int) -> List[str]:
+    output: List[str] = []
+    used = 0
+    for item in items:
+        normalized = item.strip()
+        if not normalized:
+            continue
+        cost = len(normalized) + 2
+        if used + cost > max_chars:
+            break
+        output.append(normalized)
+        used += cost
+    return output
+
+
+def _build_judge_messages(
+    *,
+    idea: str,
+    target_user: str,
+    comments: List[CommentRecord],
+    interviews: List[Dict[str, Any]],
+) -> List[Dict[str, str]]:
+    safe_comments = _truncate_for_judge(
+        [item.content for item in comments],
+        JUDGE_MAX_FEEDBACK_CHARS // 2,
+    )
+    safe_interviews = _truncate_for_judge(
+        [item["response"] for item in interviews],
+        JUDGE_MAX_FEEDBACK_CHARS // 2,
+    )
+    payload = {
+        "idea": idea,
+        "targetUser": target_user,
+        "comments": safe_comments,
+        "interviews": safe_interviews,
+    }
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are an impartial product-validation judge. "
+                "Return a JSON object with exactly these keys: "
+                '"score" (0-100 number), "summary" (max 6 sentences).'
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Evaluate audience traction based only on this data.\n"
+                f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+            ),
+        },
+    ]
+
+
+def _judge_with_llm(
+    *,
+    idea: str,
+    target_user: str,
+    comments: List[CommentRecord],
+    interviews: List[Dict[str, Any]],
+    model_name: str,
+) -> JudgeVerdict:
+    if not comments and not interviews:
+        return JudgeVerdict(
+            score=40.0,
+            summary=(
+                "No qualitative feedback was collected, so the traction summary "
+                "is neutral by default."
+            ),
+        )
+
+    base_url = os.environ.get("OPENAI_API_BASE_URL")
+    if base_url and not base_url.startswith("https://"):
+        raise ValueError("OPENAI_API_BASE_URL must use https://")
+
+    client_kwargs: Dict[str, Any] = {}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+
+    try:
+        client = OpenAI(**client_kwargs)
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=_build_judge_messages(
+                idea=idea,
+                target_user=target_user,
+                comments=comments,
+                interviews=interviews,
+            ),
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        raw = str(completion.choices[0].message.content or "").strip()
+        parsed = json.loads(raw)
+        validated = _JudgeSchema.model_validate(parsed)
+        return JudgeVerdict(
+            score=round(float(validated.score), 2),
+            summary=validated.summary.strip(),
+        )
+    except (ValidationError, json.JSONDecodeError) as exc:
+        logger.warning("Judge output validation failed: %s", exc)
+    except Exception as exc:
+        logger.warning("Judge call failed: %s", exc)
+
+    return JudgeVerdict(
+        score=40.0,
+        summary="The simulation completed, but summary generation failed.",
+    )
+
+
+def _compute_engagement_score(comments: List[CommentRecord], post_stats: Dict[str, Any]) -> float:
+    audience_norm = max(1, len({record.user_id for record in comments}) + 1)
+    likes = int(post_stats["likes"])
+    dislikes = int(post_stats["dislikes"])
+    shares = int(post_stats["shares"])
+    comment_count = len(comments)
     raw = (
-        (num_likes - num_dislikes) / n
-        + 0.5 * num_comments / n
-        + 0.3 * num_shares / n
+        (likes - dislikes) / audience_norm
+        + 0.5 * comment_count / audience_norm
+        + 0.3 * shares / audience_norm
     )
 
     if raw <= -1.0:
@@ -161,249 +392,142 @@ def _read_engagement(
     else:
         score = 40.0 + (raw / 1.5) * 60.0
 
-    score = max(0.0, min(100.0, round(score, 2)))
-
-    return EngagementBreakdown(
-        audience_size=audience_size,
-        num_likes=num_likes,
-        num_dislikes=num_dislikes,
-        num_comments=num_comments,
-        num_shares=num_shares,
-        score=score,
-    )
+    return max(0.0, min(100.0, round(score, 2)))
 
 
-def _read_comments(db_path: Path, seed_post_id: int) -> List[str]:
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT content FROM comment WHERE post_id = ? ORDER BY comment_id",
-            (seed_post_id,),
-        )
-        rows = cur.fetchall()
-    return [(r["content"] or "").strip() for r in rows if (r["content"] or "").strip()]
+def _resolve_top_level_parent(
+    record: CommentRecord,
+    by_id: Dict[int, CommentRecord],
+) -> Optional[int]:
+    parent_id = record.parent_comment_id
+    if parent_id is None:
+        return None
+
+    seen: set[int] = set()
+    while parent_id is not None and parent_id in by_id and parent_id not in seen:
+        seen.add(parent_id)
+        parent = by_id[parent_id]
+        if parent.parent_comment_id is None:
+            return parent_id
+        parent_id = parent.parent_comment_id
+    return parent_id if parent_id in by_id else None
 
 
-def _read_interviews(db_path: Path) -> List[Dict[str, str]]:
-    """Return a list of ``{user_id, prompt, response}`` dicts."""
-    interviews: List[Dict[str, str]] = []
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT user_id, info FROM trace WHERE action = ? ORDER BY created_at",
-            (INTERVIEW_ACTION_VALUE,),
-        )
-        rows = cur.fetchall()
-
-    for row in rows:
-        try:
-            info = json.loads(row["info"] or "{}")
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(info, dict):
-            continue
-        response = str(info.get("response") or "").strip()
-        if not response:
-            continue
-        interviews.append(
-            {
-                "user_id": str(row["user_id"]),
-                "prompt": str(info.get("prompt") or ""),
-                "response": response,
-            }
-        )
-    return interviews
-
-
-def _truncate_for_judge(items: List[str], max_chars: int) -> List[str]:
-    """Trim a list of strings so the joined length stays under ``max_chars``."""
-    out: List[str] = []
-    used = 0
-    for item in items:
-        item = item.strip()
-        if not item:
-            continue
-        cost = len(item) + 4
-        if used + cost > max_chars:
-            break
-        out.append(item)
-        used += cost
-    return out
-
-
-def _build_judge_messages(
-    idea: str, comments: List[str], interviews: List[Dict[str, str]]
-) -> List[Dict[str, str]]:
-    safe_comments = _truncate_for_judge(comments, JUDGE_MAX_FEEDBACK_CHARS // 2)
-    safe_interviews = _truncate_for_judge(
-        [f"Q: {i['prompt']}\nA: {i['response']}" for i in interviews],
-        JUDGE_MAX_FEEDBACK_CHARS // 2,
-    )
-
-    system = (
-        "You are an impartial product-validation judge. You will be shown "
-        "an idea, a set of comments from simulated users, and a set of "
-        "interview answers. Score how well the idea resonates with the "
-        "audience and summarize qualitative feedback.\n\n"
-        "Respond with a single JSON object using exactly these keys:\n"
-        '  "score": number 0-100,\n'
-        '  "summary": short paragraph (<= 6 sentences),\n'
-        f'  "top_praises": list of up to {JUDGE_MAX_PRAISE_OR_CONCERN} short strings,\n'
-        f'  "top_concerns": list of up to {JUDGE_MAX_PRAISE_OR_CONCERN} short strings,\n'
-        '  "audience_fit": short description of who this resonates with.\n'
-        "Be honest, balanced, and concrete. Do not invent feedback that is "
-        "not supported by the comments or interviews provided."
-    )
-
-    user_payload = {
-        "idea": idea,
-        "comments": safe_comments,
-        "interviews": safe_interviews,
-    }
-    user = (
-        "Score this idea based on the simulated audience reactions below.\n\n"
-        f"```json\n{json.dumps(user_payload, ensure_ascii=False)}\n```"
-    )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
-
-
-def _judge_with_llm(
-    idea: str,
-    comments: List[str],
-    interviews: List[Dict[str, str]],
-    model_name: str,
-) -> JudgeVerdict:
-    """Call the LLM judge and return a validated verdict.
-
-    Falls back to a neutral verdict (with a note) if there is no
-    qualitative feedback at all, or if the judge response cannot be
-    parsed/validated.
-    """
-    if not comments and not interviews:
-        return JudgeVerdict(
-            score=40.0,
-            summary=(
-                "No comments or interview responses were collected, so the "
-                "qualitative signal is essentially neutral by default."
-            ),
-            top_praises=[],
-            top_concerns=["No simulated user wrote anything substantive."],
-            audience_fit="Unclear (no qualitative data).",
-        )
-
-    base_url = os.environ.get("OPENAI_API_BASE_URL")
-    if base_url and not base_url.startswith("https://"):
-        raise ValueError("OPENAI_API_BASE_URL must use https://")
-
-    client_kwargs: Dict[str, Any] = {}
-    if base_url:
-        client_kwargs["base_url"] = base_url
-    client = OpenAI(**client_kwargs)
-
-    messages = _build_judge_messages(idea, comments, interviews)
-
-    try:
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.2,
-        )
-    except Exception as exc:
-        logger.warning("LLM judge call failed: %s", exc)
-        return JudgeVerdict(
-            score=40.0,
-            summary=f"LLM judge unavailable ({type(exc).__name__}); used neutral default.",
-            top_praises=[],
-            top_concerns=[],
-            audience_fit="",
-        )
-
-    raw = (completion.choices[0].message.content or "").strip()
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("LLM judge returned non-JSON: %r", raw[:200])
-        return JudgeVerdict(
-            score=40.0,
-            summary="LLM judge returned malformed JSON; used neutral default.",
-            top_praises=[],
-            top_concerns=[],
-            audience_fit="",
-        )
-
-    try:
-        validated = _JudgeSchema.model_validate(data)
-    except ValidationError as exc:
-        logger.warning("LLM judge JSON failed schema validation: %s", exc)
-        return JudgeVerdict(
-            score=40.0,
-            summary="LLM judge JSON failed validation; used neutral default.",
-            top_praises=[],
-            top_concerns=[],
-            audience_fit="",
-        )
-
-    return JudgeVerdict(
-        score=round(float(validated.score), 2),
-        summary=validated.summary.strip(),
-        top_praises=[s.strip() for s in validated.top_praises if s.strip()][
-            :JUDGE_MAX_PRAISE_OR_CONCERN
-        ],
-        top_concerns=[s.strip() for s in validated.top_concerns if s.strip()][
-            :JUDGE_MAX_PRAISE_OR_CONCERN
-        ],
-        audience_fit=validated.audience_fit.strip(),
-    )
-
-
-def score_run(
-    outcome: SimulationOutcome,
+def _comment_to_api(
     *,
+    record: CommentRecord,
+    persona_lookup: Dict[int, Dict[str, str]],
+) -> Dict[str, Any]:
+    persona = persona_lookup.get(record.user_id, {})
+    return {
+        "id": f"c{record.comment_id}",
+        "agentId": record.user_id,
+        "agent": persona.get("name", f"agent_{record.user_id}"),
+        "personaDescription": persona.get("description", ""),
+        "type": "vocal",
+        "comment": record.content,
+        "likes": record.likes,
+        "dislikes": record.dislikes,
+        "turn": 1,
+        "createdAt": record.created_at,
+        "replies": [],
+    }
+
+
+def _reply_to_api(
+    *,
+    record: CommentRecord,
+    parent_comment_id: int,
+    persona_lookup: Dict[int, Dict[str, str]],
+) -> Dict[str, Any]:
+    persona = persona_lookup.get(record.user_id, {})
+    return {
+        "id": f"c{parent_comment_id}r{record.comment_id}",
+        "agentId": record.user_id,
+        "agent": persona.get("name", f"agent_{record.user_id}"),
+        "personaDescription": persona.get("description", ""),
+        "comment": record.content,
+        "likes": record.likes,
+        "dislikes": record.dislikes,
+        "turn": 2,
+        "createdAt": record.created_at,
+    }
+
+
+def _build_thread(
+    comments: List[CommentRecord],
+    persona_lookup: Dict[int, Dict[str, str]],
+) -> List[Dict[str, Any]]:
+    by_id = {record.comment_id: record for record in comments}
+    top_level: List[CommentRecord] = []
+    reply_groups: Dict[int, List[CommentRecord]] = {}
+
+    for record in comments:
+        top_parent_id = _resolve_top_level_parent(record, by_id)
+        if top_parent_id is None or top_parent_id == record.comment_id:
+            top_level.append(record)
+            continue
+        reply_groups.setdefault(top_parent_id, []).append(record)
+
+    thread: List[Dict[str, Any]] = []
+    for record in top_level:
+        item = _comment_to_api(record=record, persona_lookup=persona_lookup)
+        replies = reply_groups.get(record.comment_id, [])
+        item["replies"] = [
+            _reply_to_api(
+                record=reply,
+                parent_comment_id=record.comment_id,
+                persona_lookup=persona_lookup,
+            )
+            for reply in replies
+        ]
+        thread.append(item)
+    return thread
+
+
+def build_market_artifacts(
+    *,
+    outcome: SimulationOutcome,
     idea: str,
+    target_user: str,
     judge_model: str = "gpt-4o-mini",
-    sample_limit: int = 6,
-) -> ValidationResult:
-    """Compute the hybrid validation score from a finished simulation."""
-    if not idea or not idea.strip():
-        raise ValueError("idea must be a non-empty string")
-    if sample_limit < 0:
-        raise ValueError("sample_limit must be >= 0")
+) -> MarketArtifacts:
+    if not outcome.db_path.is_file():
+        raise FileNotFoundError(f"simulation db not found: {outcome.db_path}")
 
-    engagement = _read_engagement(
-        db_path=outcome.db_path,
-        seed_post_id=outcome.seed_post_id,
-        audience_size=outcome.num_agents,
-    )
-    comments = _read_comments(outcome.db_path, outcome.seed_post_id)
-    interviews = _read_interviews(outcome.db_path)
+    persona_lookup = _load_persona_lookup(outcome.persona_path)
+    with sqlite3.connect(str(outcome.db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        post_stats = _read_post_stats(conn, outcome.seed_post_id)
+        comments = _read_comment_records(conn, outcome.seed_post_id)
+        interviews = _read_interviews(conn, persona_lookup)
 
-    sentiment = _judge_with_llm(
+    engagement_score = _compute_engagement_score(comments, post_stats)
+    judge = _judge_with_llm(
         idea=idea,
+        target_user=target_user,
         comments=comments,
         interviews=interviews,
         model_name=judge_model,
     )
+    combined = 0.5 * engagement_score + 0.5 * judge.score
+    traction_score = round(max(1.0, min(10.0, combined / 10.0)), 1)
 
-    final_score = round(0.5 * engagement.score + 0.5 * sentiment.score, 2)
+    post_payload = {
+        "title": idea,
+        "body": target_user,
+        "likes": int(post_stats["likes"]),
+        "dislikes": int(post_stats["dislikes"]),
+        "shares": int(post_stats["shares"]),
+        "commentCount": len(comments),
+        "createdAt": post_stats["created_at"],
+    }
+    thread_payload = _build_thread(comments, persona_lookup)
 
-    notes: List[str] = []
-    if not comments:
-        notes.append("No comments were generated by the audience.")
-    if not interviews:
-        notes.append("No interview responses were collected.")
-
-    return ValidationResult(
-        idea=idea,
-        final_score=final_score,
-        engagement=engagement,
-        sentiment=sentiment,
-        sample_comments=comments[:sample_limit],
-        sample_interviews=interviews[:sample_limit],
-        notes=notes,
+    return MarketArtifacts(
+        post=post_payload,
+        thread=thread_payload,
+        interviews=interviews,
+        traction_score=traction_score,
+        summary=judge.summary,
     )

@@ -1,9 +1,4 @@
-"""Lightweight types shared between simulator and scorer.
-
-Kept free of OASIS / CAMEL imports so the scoring + reporting layer can
-be unit-tested without installing OASIS itself (camel-oasis pins
-Python <3.12).
-"""
+"""Lightweight types shared by the backend simulation pipeline."""
 
 from __future__ import annotations
 
@@ -21,9 +16,10 @@ the scorer can be imported without the OASIS package being installed.
 
 @dataclass
 class SimulationOutcome:
-    """Lightweight summary of what the simulation produced."""
+    """Summary of a completed OASIS run needed for API formatting."""
 
     db_path: Path
+    persona_path: Path
     seed_post_id: int
     poster_agent_id: int
     interviewed_agent_ids: List[int]
