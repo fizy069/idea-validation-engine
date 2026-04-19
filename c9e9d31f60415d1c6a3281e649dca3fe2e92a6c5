@@ -1,0 +1,49 @@
+runtime.txt
+  2638564f05df4e73 1
+README.md
+  2638564f05df4e73 106-151
+main.py
+  2638564f05df4e73 39-42
+render.yaml
+  2638564f05df4e73 1-36
+Procfile
+  2638564f05df4e73 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "c9e9d31f60415d1c6a3281e649dca3fe2e92a6c5",
+  "prompts": {
+    "2638564f05df4e73": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "223c4b10-5f3b-46c0-974b-53e6d00c0b0e",
+        "model": "claude-opus-4-7-max"
+      },
+      "human_author": "fizy069",
+      "messages": [],
+      "total_additions": 88,
+      "total_deletions": 1,
+      "accepted_lines": 475,
+      "overriden_lines": 0
+    },
+    "f138a71b5ed9f1ce": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "34f95c79-475d-43e9-b34a-a181b96f1c80",
+        "model": "gpt-5.3-codex-xhigh"
+      },
+      "human_author": "fizy069",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    }
+  },
+  "humans": {
+    "h_55bf61dfd6cf88": {
+      "author": "Mahir Ghadiali (mghadial)"
+    }
+  }
+}
