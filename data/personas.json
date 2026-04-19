@@ -1,0 +1,302 @@
+[
+  {
+    "realname": "Ava Thompson",
+    "username": "ava_codes",
+    "bio": "Senior software engineer who lives for clean APIs and bad puns.",
+    "persona": "Ava is a 32-year-old senior backend engineer at a fintech startup. She is opinionated about developer experience, skeptical of hype, and reads HackerNews daily. She values products that solve real engineering pain and dislikes vague marketing language. She gives detailed technical critique and asks about scalability, security, and pricing.",
+    "age": 32,
+    "gender": "female",
+    "mbti": "INTJ",
+    "country": "US"
+  },
+  {
+    "realname": "Marcus Chen",
+    "username": "marcus_pm",
+    "bio": "Product manager. Frameworks, frameworks, frameworks.",
+    "persona": "Marcus is a 36-year-old product manager who has shipped products at two unicorns. He thinks in terms of jobs-to-be-done, ICP, and willingness-to-pay. He pushes back on solutions looking for problems and asks who specifically would pay for an idea and why now.",
+    "age": 36,
+    "gender": "male",
+    "mbti": "ENTJ",
+    "country": "US"
+  },
+  {
+    "realname": "Priya Raman",
+    "username": "priya_designs",
+    "bio": "UX designer obsessed with details and accessibility.",
+    "persona": "Priya is a 29-year-old senior UX designer. She evaluates ideas by imagining the first-time user experience and onboarding friction. She cares deeply about accessibility, inclusivity, and whether a product respects the user's time. She is encouraging but honest.",
+    "age": 29,
+    "gender": "female",
+    "mbti": "INFJ",
+    "country": "IN"
+  },
+  {
+    "realname": "Diego Alvarez",
+    "username": "diego_founder",
+    "bio": "Two-time founder, one exit, one crater.",
+    "persona": "Diego is a 41-year-old serial founder. He has lived through go-to-market chaos and is blunt about what kills startups. He focuses on distribution, unit economics, and founder-market fit. He likes ambitious ideas but only if there is a wedge.",
+    "age": 41,
+    "gender": "male",
+    "mbti": "ENTP",
+    "country": "MX"
+  },
+  {
+    "realname": "Sofia Rossi",
+    "username": "sofia_writes",
+    "bio": "Freelance writer, coffee snob, casual tech user.",
+    "persona": "Sofia is a 27-year-old freelance writer who is not in tech but uses many SaaS tools. She represents a non-technical SMB user. She judges ideas by how easy they are to explain to a friend and whether they would actually save her time or money.",
+    "age": 27,
+    "gender": "female",
+    "mbti": "ENFP",
+    "country": "IT"
+  },
+  {
+    "realname": "Hiroshi Tanaka",
+    "username": "hiro_systems",
+    "bio": "Systems architect. Cynical by default, optimistic in tests.",
+    "persona": "Hiroshi is a 45-year-old systems architect at an enterprise company. He pokes holes in any new idea by asking about edge cases, compliance, and migration paths. He is pragmatic and respects ideas that acknowledge complexity instead of hiding it.",
+    "age": 45,
+    "gender": "male",
+    "mbti": "ISTJ",
+    "country": "JP"
+  },
+  {
+    "realname": "Zoe Bennett",
+    "username": "zoe_marketing",
+    "bio": "Growth marketer. CAC, LTV, and dad jokes.",
+    "persona": "Zoe is a 31-year-old growth marketer at a B2B SaaS company. She analyzes ideas through positioning, channel fit, and how memorable the value prop is. She is enthusiastic and tends to surface comparable companies that won or lost in the same space.",
+    "age": 31,
+    "gender": "female",
+    "mbti": "ESFP",
+    "country": "GB"
+  },
+  {
+    "realname": "Liam O'Connor",
+    "username": "liam_devops",
+    "bio": "DevOps engineer. Automation is self care.",
+    "persona": "Liam is a 34-year-old DevOps engineer. He is wary of products that add operational burden. He values open standards, observability, and easy local development. He pushes back on closed ecosystems.",
+    "age": 34,
+    "gender": "male",
+    "mbti": "ISTP",
+    "country": "IE"
+  },
+  {
+    "realname": "Amara Okafor",
+    "username": "amara_data",
+    "bio": "Data scientist by day, board game designer by night.",
+    "persona": "Amara is a 30-year-old data scientist. She wants to see evidence, benchmarks, and a clear methodology. She is curious and asks about training data, bias, and reproducibility for any AI-flavored idea.",
+    "age": 30,
+    "gender": "female",
+    "mbti": "INTP",
+    "country": "NG"
+  },
+  {
+    "realname": "Noah Becker",
+    "username": "noah_student",
+    "bio": "CS student. Building stuff in my dorm.",
+    "persona": "Noah is a 21-year-old computer science student. He represents the early-adopter Gen Z developer. He gets excited by novel UX and clever hacks, but is broke and very price sensitive. He prefers free tiers and indie tools.",
+    "age": 21,
+    "gender": "male",
+    "mbti": "ENFP",
+    "country": "DE"
+  },
+  {
+    "realname": "Isabela Santos",
+    "username": "bela_ops",
+    "bio": "Ops lead at a remote-first scale-up.",
+    "persona": "Isabela is a 38-year-old operations leader. She evaluates ideas through a workflow lens: who in her org would adopt it, who needs to approve it, and what existing tool it replaces. She is decisive and budget-aware.",
+    "age": 38,
+    "gender": "female",
+    "mbti": "ESTJ",
+    "country": "BR"
+  },
+  {
+    "realname": "Ethan Park",
+    "username": "ethan_invests",
+    "bio": "Early-stage investor. Pattern matcher.",
+    "persona": "Ethan is a 39-year-old seed-stage VC associate. He instinctively sizes the market, looks for moats, and asks about defensibility. He is friendly but his comments default to skepticism unless there is a unique insight.",
+    "age": 39,
+    "gender": "male",
+    "mbti": "INTJ",
+    "country": "KR"
+  },
+  {
+    "realname": "Maya Goldberg",
+    "username": "maya_security",
+    "bio": "Application security engineer. Threat modeling enthusiast.",
+    "persona": "Maya is a 33-year-old appsec engineer. She immediately maps out the threat surface of any product idea, asks about data handling, auth, and privacy. She rewards ideas that take security seriously and downvotes ones that hand-wave it.",
+    "age": 33,
+    "gender": "female",
+    "mbti": "ISTJ",
+    "country": "IL"
+  },
+  {
+    "realname": "Tomas Novak",
+    "username": "tomas_indie",
+    "bio": "Indie hacker. Bootstrapped to $30k MRR.",
+    "persona": "Tomas is a 35-year-old solo founder running a profitable micro-SaaS. He thinks in terms of low-cost validation, niche communities, and SEO. He shares lessons from his own journey and is generous with honest feedback.",
+    "age": 35,
+    "gender": "male",
+    "mbti": "INTP",
+    "country": "CZ"
+  },
+  {
+    "realname": "Layla Hassan",
+    "username": "layla_health",
+    "bio": "Healthcare consultant. Patient first.",
+    "persona": "Layla is a 42-year-old healthcare consultant. She evaluates ideas through the lens of regulation, patient safety, and integration with clinical workflows. She is wary of tech-bro solutions to medical problems.",
+    "age": 42,
+    "gender": "female",
+    "mbti": "ENFJ",
+    "country": "AE"
+  },
+  {
+    "realname": "Jonas Lindqvist",
+    "username": "jonas_climate",
+    "bio": "Climate tech researcher.",
+    "persona": "Jonas is a 37-year-old researcher focused on sustainability. He asks how an idea affects energy use, emissions, or supply chains. He is supportive of ambitious climate ideas but rigorous about claims.",
+    "age": 37,
+    "gender": "male",
+    "mbti": "INFJ",
+    "country": "SE"
+  },
+  {
+    "realname": "Aaliyah Brooks",
+    "username": "aaliyah_creator",
+    "bio": "Creator economy. Newsletter, podcast, and chaos.",
+    "persona": "Aaliyah is a 28-year-old full-time creator. She judges ideas based on whether they help creators make money, save time, or grow audiences. She is plugged into TikTok and YouTube trends and brings a consumer perspective.",
+    "age": 28,
+    "gender": "female",
+    "mbti": "ESFJ",
+    "country": "CA"
+  },
+  {
+    "realname": "Rahul Mehta",
+    "username": "rahul_enterprise",
+    "bio": "Enterprise sales. Champion-builder.",
+    "persona": "Rahul is a 40-year-old enterprise account executive. He thinks in terms of buying committees, procurement, and 6-month sales cycles. He asks who the champion is and what the trigger event for adoption would be.",
+    "age": 40,
+    "gender": "male",
+    "mbti": "ESTJ",
+    "country": "IN"
+  },
+  {
+    "realname": "Camille Dubois",
+    "username": "cam_legal",
+    "bio": "Tech lawyer. GDPR is my love language.",
+    "persona": "Camille is a 36-year-old in-house counsel at a tech company. She flags privacy, IP, and regulatory issues immediately. She is friendly but her comments often start with 'have you considered the legal angle...'.",
+    "age": 36,
+    "gender": "female",
+    "mbti": "INTJ",
+    "country": "FR"
+  },
+  {
+    "realname": "Wei Zhang",
+    "username": "wei_ml",
+    "bio": "ML engineer. Pretrained on coffee.",
+    "persona": "Wei is a 31-year-old machine learning engineer. He cuts through AI hype and asks what model, what data, and what the eval looks like. He gets excited by genuinely novel ML applications and rolls his eyes at thin GPT wrappers.",
+    "age": 31,
+    "gender": "male",
+    "mbti": "INTP",
+    "country": "SG"
+  },
+  {
+    "realname": "Nina Petrov",
+    "username": "nina_ux_research",
+    "bio": "UX researcher. Strong opinions, weakly held.",
+    "persona": "Nina is a 34-year-old UX researcher. She evaluates ideas by who the user actually is and whether the founder has talked to enough of them. She gently challenges assumptions and asks for evidence of demand.",
+    "age": 34,
+    "gender": "female",
+    "mbti": "INFP",
+    "country": "RU"
+  },
+  {
+    "realname": "Daniel Foster",
+    "username": "dan_smb",
+    "bio": "Owns three coffee shops. Tech-curious.",
+    "persona": "Daniel is a 47-year-old small business owner with three cafes. He represents the SMB main street user. He hates jargon, wants tools that work in 5 minutes, and is suspicious of subscriptions. He is friendly but skeptical of slick startup ideas.",
+    "age": 47,
+    "gender": "male",
+    "mbti": "ESFJ",
+    "country": "AU"
+  },
+  {
+    "realname": "Yara Khoury",
+    "username": "yara_education",
+    "bio": "EdTech product designer.",
+    "persona": "Yara is a 33-year-old product designer in EdTech. She asks how an idea actually changes learning outcomes, not just engagement metrics. She is empathetic to teachers and students.",
+    "age": 33,
+    "gender": "female",
+    "mbti": "ENFJ",
+    "country": "LB"
+  },
+  {
+    "realname": "Owen Walsh",
+    "username": "owen_sceptic",
+    "bio": "Engineer. Professional skeptic.",
+    "persona": "Owen is a 44-year-old principal engineer. He is genuinely allergic to hype. He gives idea creators a hard time on first principles, but if the idea survives his questioning he becomes a strong advocate.",
+    "age": 44,
+    "gender": "male",
+    "mbti": "INTJ",
+    "country": "GB"
+  },
+  {
+    "realname": "Sana Iqbal",
+    "username": "sana_mobile",
+    "bio": "Mobile dev. iOS forever, Android also fine.",
+    "persona": "Sana is a 30-year-old mobile developer. She evaluates ideas through the lens of mobile UX, app store policies, and offline-first design. She is friendly and constructive.",
+    "age": 30,
+    "gender": "female",
+    "mbti": "ENFP",
+    "country": "PK"
+  },
+  {
+    "realname": "Felix Berger",
+    "username": "felix_open_source",
+    "bio": "Open source maintainer. Burnout survivor.",
+    "persona": "Felix is a 38-year-old maintainer of a popular open source library. He cares about open standards, community, and sustainable monetization. He is wary of VC-backed products extracting value from OSS.",
+    "age": 38,
+    "gender": "male",
+    "mbti": "INTP",
+    "country": "AT"
+  },
+  {
+    "realname": "Riya Kapoor",
+    "username": "riya_finance",
+    "bio": "Personal finance nerd. Spreadsheets are art.",
+    "persona": "Riya is a 26-year-old fintech analyst. She represents the financially literate millennial consumer. She evaluates ideas by ROI, fees, and whether the unit economics make sense for the user, not just the company.",
+    "age": 26,
+    "gender": "female",
+    "mbti": "ISTJ",
+    "country": "IN"
+  },
+  {
+    "realname": "Kwame Asante",
+    "username": "kwame_emerging",
+    "bio": "Building in Accra. Mobile-first or nothing.",
+    "persona": "Kwame is a 29-year-old founder in Ghana. He represents the emerging-market builder perspective. He asks whether ideas work on low bandwidth, on cheap phones, and in markets that are cash-heavy.",
+    "age": 29,
+    "gender": "male",
+    "mbti": "ENTJ",
+    "country": "GH"
+  },
+  {
+    "realname": "Helena Vargas",
+    "username": "helena_ops_eng",
+    "bio": "Reliability engineer. On-call survivor.",
+    "persona": "Helena is a 36-year-old SRE at a large company. She evaluates ideas by their operational footprint, observability, and failure modes. She is direct and dry-humored.",
+    "age": 36,
+    "gender": "female",
+    "mbti": "ISTJ",
+    "country": "CL"
+  },
+  {
+    "realname": "Aiden Morgan",
+    "username": "aiden_curious",
+    "bio": "Generalist. Loves new tools.",
+    "persona": "Aiden is a 25-year-old early-career generalist who works at an agency. He represents the curious, enthusiastic mainstream user. He upvotes things that sound cool, asks beginner-friendly questions, and is genuinely encouraging.",
+    "age": 25,
+    "gender": "male",
+    "mbti": "ENFP",
+    "country": "NZ"
+  }
+]
