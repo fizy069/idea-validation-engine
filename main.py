@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -92,6 +93,30 @@ async def _run_market_validation(**kwargs):
     from oasis_validator.pipeline import run_market_validation
 
     return await run_market_validation(**kwargs)
+
+
+async def _cleanup_simulation_db(db_path: Path) -> None:
+    """Best-effort cleanup for temporary simulation DB files.
+
+    On Windows, sqlite handles can briefly remain open after a run. We retry
+    a few times so cleanup never causes a request failure.
+    """
+    retries = 6
+    for attempt in range(retries):
+        try:
+            if db_path.exists():
+                db_path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt == retries - 1:
+                logger.warning("Could not delete temp DB due to file lock: %s", db_path)
+                return
+            await asyncio.sleep(0.2)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            logger.warning("Could not delete temp DB %s: %s", db_path, exc)
+            return
 
 
 rate_limiter = InMemoryRateLimiter(
@@ -209,8 +234,7 @@ async def simulate_market(
             message="The simulation could not complete. Please retry.",
         ) from exc
     finally:
-        if simulation_db.exists():
-            simulation_db.unlink(missing_ok=True)
+        await _cleanup_simulation_db(simulation_db)
 
 
 @app.get("/result/{slug}", response_model=GetResultResponse)
