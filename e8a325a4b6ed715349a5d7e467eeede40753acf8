@@ -1,0 +1,69 @@
+oasis_validator/pipeline.py
+  5b5c8ca19a27d098 1-60
+requirements.txt
+  5b5c8ca19a27d098 1-7
+.env.example
+  5b5c8ca19a27d098 1-9
+.gitignore
+  h_55bf61dfd6cf88 29
+  6a9b29d3dfb538c8 30-34
+  5b5c8ca19a27d098 1-28
+oasis_validator/simulator.py
+  5b5c8ca19a27d098 1-264
+oasis_validator/types.py
+  5b5c8ca19a27d098 1-31
+oasis_validator/__init__.py
+  5b5c8ca19a27d098 1-14
+README.md
+  5b5c8ca19a27d098 1-234
+oasis_validator/report.py
+  5b5c8ca19a27d098 1-207
+tools/inspect_run.py
+  5b5c8ca19a27d098 1-103
+oasis_validator/scorer.py
+  5b5c8ca19a27d098 1-409
+tests/smoke_test.py
+  5b5c8ca19a27d098 1-224
+validate.py
+  5b5c8ca19a27d098 1-246
+data/personas.json
+  5b5c8ca19a27d098 1-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "e8a325a4b6ed715349a5d7e467eeede40753acf8",
+  "prompts": {
+    "5b5c8ca19a27d098": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "775cbd25-557a-4c17-950f-6a33f41d99f1",
+        "model": "claude-opus-4-7-max"
+      },
+      "human_author": "fizy069",
+      "messages": [],
+      "total_additions": 2189,
+      "total_deletions": 51,
+      "accepted_lines": 2138,
+      "overriden_lines": 0
+    },
+    "6a9b29d3dfb538c8": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "5df2ef27-4a19-4d62-a09d-fad090cdb534",
+        "model": "claude-opus-4-7-max"
+      },
+      "human_author": "fizy069",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 2,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  },
+  "humans": {
+    "h_55bf61dfd6cf88": {
+      "author": "Mahir Ghadiali (mghadial)"
+    }
+  }
+}
